@@ -65,6 +65,14 @@ public final class BindingSpecificEnvironmentPostProcessor implements Applicatio
      */
     public BindingSpecificEnvironmentPostProcessor() {
         this.bindings = new Bindings();
+
+        Map<String, Object> properties = new HashMap<>();
+        MapMapper map = new MapMapper(bindings.getBindings().get(0).getSecret(), properties);
+
+        map.from("database").to("used.as.key");
+
+        System.out.println(map);
+
         this.processors = SpringFactoriesLoader.
                 loadFactories(BindingsPropertiesProcessor.class, getClass().getClassLoader());
     }
