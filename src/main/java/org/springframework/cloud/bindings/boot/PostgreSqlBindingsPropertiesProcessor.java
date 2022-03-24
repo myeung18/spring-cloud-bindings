@@ -20,6 +20,9 @@ import org.springframework.cloud.bindings.Binding;
 import org.springframework.cloud.bindings.Bindings;
 import org.springframework.core.env.Environment;
 
+import java.nio.file.FileSystems;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import static org.springframework.cloud.bindings.boot.Guards.isTypeEnabled;
@@ -35,6 +38,9 @@ public final class PostgreSqlBindingsPropertiesProcessor implements BindingsProp
      * The {@link Binding} type that this processor is interested in: {@value}.
      **/
     public static final String TYPE = "postgresql";
+    public static final String SSL_MODE = "sslmode";
+    public static final String SSL_ROOT_CERT = "sslrootcert";
+    public static final String OPTIONS = "options";
 
     @Override
     public void process(Environment environment, Bindings bindings, Map<String, Object> properties) {
@@ -44,11 +50,15 @@ public final class PostgreSqlBindingsPropertiesProcessor implements BindingsProp
 
         bindings.filterBindings(TYPE).forEach(binding -> {
             MapMapper map = new MapMapper(binding.getSecret(), properties);
-
             //jdbc properties
             map.from("password").to("spring.datasource.password");
             map.from("host", "port", "database").to("spring.datasource.url",
                     (host, port, database) -> String.format("jdbc:postgresql://%s:%s/%s", host, port, database));
+            String sslOptions = buildSslModeAndOptions(binding);
+            if (!"".equals(sslOptions)) {
+                properties.put("spring.datasource.url", properties.get("spring.datasource.url") + "?" + sslOptions);
+            }
+
             map.from("username").to("spring.datasource.username");
 
             // jdbcURL takes precedence
@@ -65,6 +75,62 @@ public final class PostgreSqlBindingsPropertiesProcessor implements BindingsProp
             // r2dbcURL takes precedence
             map.from("r2dbc-url").to("spring.r2dbc.url");
         });
+    }
+
+    private String buildSslModeAndOptions(Binding binding) {
+        //process ssl params
+        //https://www.postgresql.org/docs/14/libpq-connect.html
+        String sslmode = binding.getSecret().getOrDefault(SSL_MODE, "");
+        String sslRootCert = binding.getSecret().getOrDefault(SSL_ROOT_CERT, "");
+        StringBuilder sslparam = new StringBuilder();
+        if (!"".equals(sslmode)) {
+            sslparam.append(SSL_MODE).append("=").append(sslmode);
+        }
+        if (!"".equals(sslRootCert)) {
+            if (!"".equals(sslmode)) {
+                sslparam.append("&");
+            }
+            sslparam.append(SSL_ROOT_CERT).append("=")
+                    .append(binding.getPath()).append(FileSystems.getDefault().getSeparator())
+                    .append(sslRootCert);
+        }
+        //cockroachdb cloud uses options parameter to pass in the cluster routing-id
+        //https://www.cockroachlabs.com/docs/v21.2/connection-parameters#additional-connection-parameters
+        String options = binding.getSecret().getOrDefault(OPTIONS, "");
+        String crdbOption = "";
+        List<String> postgreOptions = new ArrayList<>();
+        if (!options.equals("")) {
+            String[] allOpts = options.split("&");
+            for (String o : allOpts) {
+                String[] keyval = o.split("=");
+                if (keyval.length != 2 || keyval[0].length() == 0 || keyval[1].length() == 0) {
+                    continue;
+                }
+                if (keyval[0].equals("--cluster")) {
+                    crdbOption = keyval[0] + "=" + keyval[1];
+                } else {
+                    postgreOptions.add("-c " + keyval[0] + "=" + keyval[1]);
+                }
+            }
+        }
+        String combinedOptions = crdbOption;
+        if (postgreOptions.size() > 0) {
+            String otherOpts = String.join(" ", postgreOptions);
+            if (!combinedOptions.equals("")) {
+                combinedOptions = combinedOptions + " " + otherOpts;
+            } else {
+                combinedOptions = otherOpts;
+            }
+        }
+        if (!"".equals(combinedOptions)) {
+            combinedOptions = "options=" + combinedOptions;
+        }
+        if (sslparam.length() > 0 && !combinedOptions.equals("")) {
+            combinedOptions = sslparam + "&" + combinedOptions;
+        } else if (sslparam.length() > 0) {
+            combinedOptions = sslparam.toString();
+        }
+        return combinedOptions;
     }
 
 }

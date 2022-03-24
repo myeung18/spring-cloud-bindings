@@ -23,6 +23,7 @@ import org.springframework.cloud.bindings.Bindings;
 import org.springframework.cloud.bindings.FluentMap;
 import org.springframework.mock.env.MockEnvironment;
 
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.HashMap;
 
@@ -44,6 +45,17 @@ final class PostgreSqlBindingsPropertiesProcessorTest {
 
     private final HashMap<String, Object> properties = new HashMap<>();
 
+    @Test
+    void testCrdb() {
+        Path root = Paths.get("src/test/resources/ssl");
+        Bindings bindings = new Bindings(
+                new Binding(root.resolve("crdb")));
+
+        new PostgreSqlBindingsPropertiesProcessor().process(environment, bindings, properties);
+
+        System.out.println(properties);
+
+    }
     @Test
     @DisplayName("composes jdbc url from host port and database")
     void testJdbc() {

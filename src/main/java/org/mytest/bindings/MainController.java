@@ -1,4 +1,4 @@
-package org.springframework.cloud.bindings;
+package org.mytest.bindings;
 
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
